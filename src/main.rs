@@ -242,13 +242,10 @@ fn process_av1(reader: &mut BufReader<std::fs::File>) -> Result<Vec<FrameData>, 
         obu: &av1p::obu::Obu,
     ) {
         let reader = &mut io::Read::take(reader, u64::from(obu.obu_size));
-        match obu.obu_type {
-            av1p::obu::OBU_SEQUENCE_HEADER => {
-                if let Some(sh) = av1p::obu::parse_sequence_header(reader) {
-                    seq.sh = Some(sh);
-                }
+        if let av1p::obu::OBU_SEQUENCE_HEADER = obu.obu_type {
+            if let Some(sh) = av1p::obu::parse_sequence_header(reader) {
+                seq.sh = Some(sh);
             }
-            _ => {}
         }
     }
 
