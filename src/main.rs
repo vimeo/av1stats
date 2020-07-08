@@ -147,9 +147,9 @@ fn process_input(config: &AppConfig) -> io::Result<()> {
         }
         Output::CommandLine => {
             if config.verbose {
-                println!("Frame size\t\tBase quantizer index");
+                println!("{:<20} {:<20}", "Frame size", "Base quantizer index");
                 for frame in frame_data.iter() {
-                    println!("{}\t\t\t{}", frame.size, frame.quantizer_index);
+                    println!("{:<20} {:<20}", frame.size, frame.quantizer_index);
                 }
             }
 
