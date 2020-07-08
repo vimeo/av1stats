@@ -1,0 +1,13 @@
+[package]
+name = "av1stats"
+version = "0.1.0"
+authors = ["Raphaël Zumer <rzumer@tebako.net>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+av1parser = { git = "https://github.com/yohhoy/av1parser", rev = "e85d26daa32e02cfab9292e11a3bfca0469dbe34" }
+clap = "~2.33"
+csv = "1.1"
+serde = { version = "1", features = ["derive"] }
