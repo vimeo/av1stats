@@ -3,11 +3,10 @@ extern crate clap;
 
 use av1parser as av1p;
 use clap::{App, Arg};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io;
-use std::io::{BufReader, LineWriter, Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::io::{BufReader, LineWriter, Read, Seek, SeekFrom};
 use std::vec::Vec;
 
 #[derive(PartialEq)]
@@ -31,11 +30,31 @@ struct ContainerFrameData {
     size: u32,
 }
 
+/// AV1 frame types
+#[derive(Deserialize, Serialize)]
+enum FrameType {
+    Key,
+    Inter,
+    IntraOnly,
+    Switch,
+}
+
 /// Frame-wise information relevant to AV1 stream analysis
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct FrameData {
     size: u32,
     quantizer_index: u8,
+    r#type: FrameType,
+}
+
+impl FrameData {
+    pub fn new() -> Self {
+        FrameData {
+            size: 0,
+            quantizer_index: 0,
+            r#type: FrameType::Key,
+        }
+    }
 }
 
 fn main() -> io::Result<()> {
@@ -123,9 +142,6 @@ fn process_input(config: &AppConfig) -> io::Result<()> {
 
     match config.output {
         Output::File(fname) => {
-            // Only write a file header if we are writing to the head of the file.
-            let write_header = !config.append || !Path::new(fname).exists();
-
             let output_file = OpenOptions::new()
                 .write(true)
                 .append(config.append)
@@ -133,23 +149,20 @@ fn process_input(config: &AppConfig) -> io::Result<()> {
                 .open(fname)
                 .expect("could not open or create the specified output file");
 
-            let mut writer = LineWriter::new(output_file);
-
-            if write_header {
-                writer.write_all(b"size,quantizer_index\n")?;
-            }
+            let mut writer = csv::Writer::from_writer(LineWriter::new(output_file));
 
             // Write each line of data.
             for frame in frame_data {
-                let line = format!("{},{}\n", frame.size, frame.quantizer_index);
-                writer.write_all(line.as_bytes())?;
+                writer.serialize(frame)?;
             }
         }
         Output::CommandLine => {
             if config.verbose {
-                println!("{:<20} {:<20}", "Frame size", "Base quantizer index");
+                let mut writer = csv::Writer::from_writer(io::stdout());
+
+                // Write each line of data.
                 for frame in frame_data.iter() {
-                    println!("{:<20} {:<20}", frame.size, frame.quantizer_index);
+                    writer.serialize(frame)?;
                 }
             }
 
@@ -215,8 +228,7 @@ fn process_av1(reader: &mut BufReader<std::fs::File>) -> Result<Vec<FrameData>, 
     };
 
     let mut seq = av1p::av1::Sequence::new(); // to be initialized in the parse loop
-    let mut frame_sizes = Vec::<u32>::new(); // total size of all container frames
-    let mut frame_qidxes = Vec::<u8>::new(); // base quantizer index of all shown frames
+    let mut frame_data = Vec::new();
 
     fn get_container_frame<R: io::Read>(
         reader: &mut R,
@@ -253,7 +265,8 @@ fn process_av1(reader: &mut BufReader<std::fs::File>) -> Result<Vec<FrameData>, 
     while let Some(frame) = get_container_frame(reader, &fmt) {
         let pos = reader.seek(SeekFrom::Current(0))?;
         let mut sz = frame.size;
-        frame_sizes.push(sz);
+        let mut frame = FrameData::new();
+        frame.size = sz;
 
         // Read all AV1 OBUs in the container frame.
         while sz > 0 {
@@ -278,7 +291,14 @@ fn process_av1(reader: &mut BufReader<std::fs::File>) -> Result<Vec<FrameData>, 
                             }
 
                             if !fh.show_existing_frame {
-                                frame_qidxes.push(fh.quantization_params.base_q_idx);
+                                frame.quantizer_index = fh.quantization_params.base_q_idx;
+                                frame.r#type = match fh.frame_type {
+                                    0 => FrameType::Key,
+                                    1 => FrameType::Inter,
+                                    2 => FrameType::IntraOnly,
+                                    3 => FrameType::Switch,
+                                    _ => unreachable!(),
+                                };
                             }
                         }
                     } else {
@@ -294,16 +314,7 @@ fn process_av1(reader: &mut BufReader<std::fs::File>) -> Result<Vec<FrameData>, 
         }
 
         reader.seek(SeekFrom::Start(pos + u64::from(frame.size)))?;
-    }
-
-    assert_eq!(frame_sizes.len(), frame_qidxes.len());
-
-    let mut frame_data = Vec::with_capacity(frame_sizes.len());
-    for (size, quantizer_index) in frame_sizes.iter().zip(frame_qidxes.iter()) {
-        frame_data.push(FrameData {
-            size: *size,
-            quantizer_index: *quantizer_index,
-        });
+        frame_data.push(frame);
     }
 
     Ok(frame_data)
