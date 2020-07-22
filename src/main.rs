@@ -266,6 +266,7 @@ fn process_av1(reader: &mut BufReader<std::fs::File>) -> Result<Vec<FrameData>, 
     while let Some(frame) = get_container_frame(reader, &fmt) {
         let pos = reader.seek(SeekFrom::Current(0))?;
         let mut sz = frame.size;
+        let mut seen_frame_header = false;
         let mut frame = FrameData::new();
         frame.size = sz;
 
@@ -292,6 +293,8 @@ fn process_av1(reader: &mut BufReader<std::fs::File>) -> Result<Vec<FrameData>, 
                             }
 
                             if !fh.show_existing_frame {
+                                seen_frame_header = true;
+
                                 frame.quantizer_index = fh.quantization_params.base_q_idx;
                                 frame.r#type = match fh.frame_type {
                                     0 => FrameType::Key,
@@ -315,7 +318,9 @@ fn process_av1(reader: &mut BufReader<std::fs::File>) -> Result<Vec<FrameData>, 
         }
 
         reader.seek(SeekFrom::Start(pos + u64::from(frame.size)))?;
-        frame_data.push(frame);
+        if seen_frame_header {
+            frame_data.push(frame);
+        }
     }
 
     Ok(frame_data)
