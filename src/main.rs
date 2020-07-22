@@ -144,6 +144,7 @@ fn process_input(config: &AppConfig) -> io::Result<()> {
         Output::File(fname) => {
             let output_file = OpenOptions::new()
                 .write(true)
+                .truncate(!config.append)
                 .append(config.append)
                 .create(true)
                 .open(fname)
